@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>입지 데이터 관리 시스템 Pro</title>
+  <!-- 카카오 지도 API (libraries=services,clusterer,roadview 포함) -->
+  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=b9cce314c71609574a583dfc31be1b4c&libraries=services,clusterer,roadview"></script>
+  <!-- 구글 원탭 로그인 SDK -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; }
+    body { display: flex; height: 100vh; overflow: hidden; background: #f5f6f7; }
+    
+    /* 사이드바 */
+    #sidebar { width: 380px; height: 100%; background: #fff; border-right: 1px solid #e0e0e0; display: flex; flex-direction: column; z-index: 10; box-shadow: 2px 0 8px rgba(0,0,0,0.05); }
+    
+    /* 구글 로그인 & 권한 안내 상단바 */
+    .user-auth-bar { padding: 10px 16px; background: #0f172a; color: #fff; font-size: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; }
+    .user-status { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .btn-invite { padding: 4px 10px; font-size: 11px; background: #f59e0b; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: 700; transition: 0.2s; }
+    .btn-invite:hover { background: #d97706; }
+
+    .header { padding: 16px 20px; background: #1e293b; color: #fff; display: flex; justify-content: space-between; align-items: center; }
+    .header h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
+    .btn-add { padding: 8px 14px; background: #10b981; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; transition: 0.2s; }
+    .btn-add:hover { background: #059669; }
+    
+    /* 필터 영역 */
+    .filter-bar { padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; gap: 6px; flex-wrap: wrap; }
+    .filter-btn { padding: 6px 12px; border: 1px solid #cbd5e1; background: #fff; border-radius: 20px; cursor: pointer; font-size: 12px; font-weight: 600; color: #475569; transition: all 0.2s; }
+    .filter-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; box-shadow: 0 2px 4px rgba(59,130,246,0.3); }
+    
+    /* 목록 카드 영역 */
+    .list-container { flex: 1; overflow-y: auto; padding: 14px; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s; position: relative; }
+    .card:hover { border-color: #3b82f6; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .card-badge { display: inline-block; padding: 3px 8px; font-size: 11px; font-weight: 700; border-radius: 4px; color: #fff; }
+    
+    /* 카테고리 시그니처 색상 */
+    .badge-LH { background-color: #e67e22; }      /* 주황 */
+    .badge-요양원 { background-color: #8e44ad; }  /* 보라 */
+    .badge-분양 { background-color: #e74c3c; }    /* 빨강 */
+    .badge-PC { background-color: #2980b9; }      /* 파랑 */
+    .badge-PM { background-color: #16a34a; }      /* 초록 */
+    .badge-기타 { background-color: #64748b; }    /* 회색 */
+    
+    .card-address { font-size: 13px; color: #64748b; line-height: 1.4; }
+    .card-title { font-size: 15px; font-weight: 700; color: #1e293b; }
+    .card-info { font-size: 12px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; }
+    .card-file-link { color: #2563eb; text-decoration: none; font-weight: 600; }
+    .card-file-link:hover { text-decoration: underline; }
+    
+    /* 지도 및 로드뷰 컨테이너 */
+    #map-container { flex: 1; display: flex; flex-direction: row; position: relative; height: 100%; overflow: hidden; }
+    #map { flex: 1; position: relative; height: 100%; min-height: 100%; }
+    #rvContainer { flex: 1; background: #000; border-left: 1px solid #cbd5e1; height: 100%; display: none; position: relative; }
+
+    /* 지도 오버레이 컨트롤 버튼 */
+    .map-controls { position: absolute; top: 10px; right: 10px; z-index: 100; display: flex; flex-direction: column; gap: 4px; }
+    .ctrl-btn { height: 36px; padding: 0 12px; display: flex; justify-content: center; align-items: center; background: #ffffff; border-radius: 5px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s; user-select: none; border: 1px solid #cbd5e1; color: #334155; white-space: nowrap; min-width: 80px; }
+    .ctrl-btn:hover { background: #f1f5f9; }
+    .ctrl-btn.active { background: #fee500; border-color: #f0d800; color: #111827; font-weight: 700; }
+
+    /* 거리 측정 정보창 */
+    .distance-info { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 100; background: #ffffff; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.12); border: 1px solid #e2e8f0; padding: 10px 16px; display: none; align-items: center; gap: 12px; font-size: 13px; color: #334155; min-width: 280px; }
+    .distance-info.show { display: flex; }
+    .distance-value { font-weight: 700; color: #2563eb; font-size: 15px; }
+    .distance-guide { font-size: 11px; color: #94a3b8; }
+    .btn-clear-dist { height: 28px; padding: 0 10px; font-size: 11px; background: #fff; color: #ef4444; border: 1px solid #fecaca; border-radius: 4px; cursor: pointer; font-weight: 600; }
+    .btn-clear-dist:hover { background: #fee2e2; }
+
+    /* 로드뷰 닫기 버튼 */
+    .rv-close-btn { position: absolute; top: 10px; right: 10px; z-index: 10; height: 34px; padding: 0 14px; background: rgba(17,24,39,0.75); color: white; border: 1px solid rgba(255,255,255,0.15); border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: 500; }
+    .rv-close-btn:hover { background: rgba(17,24,39,0.95); }
+
+    /* 카카오 MapWalker(동동이) 스타일 */
+    .MapWalker {position:absolute;margin:-26px 0 0 -51px}
+    .MapWalker .figure {position:absolute;width:25px;left:38px;top:-2px;height:39px;background:url(https://t1.daumcdn.net/localimg/localimages/07/2018/pc/roadview_minimap_wk_2018.png) -298px -114px no-repeat}
+    .MapWalker .angleBack {width:102px;height:52px;background: url(https://t1.daumcdn.net/localimg/localimages/07/2018/pc/roadview_minimap_wk_2018.png) -834px -2px no-repeat;}
+    .MapWalker.m0 .figure {background-position: -298px -114px;} .MapWalker.m1 .figure {background-position: -335px -114px;} .MapWalker.m2 .figure {background-position: -372px -114px;} .MapWalker.m3 .figure {background-position: -409px -114px;} .MapWalker.m4 .figure {background-position: -446px -114px;} .MapWalker.m5 .figure {background-position: -483px -114px;} .MapWalker.m6 .figure {background-position: -520px -114px;} .MapWalker.m7 .figure {background-position: -557px -114px;} .MapWalker.m8 .figure {background-position: -2px -114px;} .MapWalker.m9 .figure {background-position: -39px -114px;} .MapWalker.m10 .figure {background-position: -76px -114px;} .MapWalker.m11 .figure {background-position: -113px -114px;} .MapWalker.m12 .figure {background-position: -150px -114px;} .MapWalker.m13 .figure {background-position: -187px -114px;} .MapWalker.m14 .figure {background-position: -224px -114px;} .MapWalker.m15 .figure {background-position: -261px -114px;}
+    .MapWalker.m0 .angleBack {background-position: -834px -2px;} .MapWalker.m1 .angleBack {background-position: -938px -2px;} .MapWalker.m2 .angleBack {background-position: -1042px -2px;} .MapWalker.m3 .angleBack {background-position: -1146px -2px;} .MapWalker.m4 .angleBack {background-position: -1250px -2px;} .MapWalker.m5 .angleBack {background-position: -1354px -2px;} .MapWalker.m6 .angleBack {background-position: -1458px -2px;} .MapWalker.m7 .angleBack {background-position: -1562px -2px;} .MapWalker.m8 .angleBack {background-position: -2px -2px;} .MapWalker.m9 .angleBack {background-position: -106px -2px;} .MapWalker.m10 .angleBack {background-position: -210px -2px;} .MapWalker.m11 .angleBack {background-position: -314px -2px;} .MapWalker.m12 .angleBack {background-position: -418px -2px;} .MapWalker.m13 .angleBack {background-position: -522px -2px;} .MapWalker.m14 .angleBack {background-position: -626px -2px;} .MapWalker.m15 .angleBack {background-position: -730px -2px;}
+
+    /* 모달 폼 */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.6); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
+    .modal-content { background: #fff; width: 440px; padding: 24px; border-radius: 12px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; outline: none; transition: 0.2s; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+    .btn { padding: 9px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s; }
+    .btn-cancel { background: #94a3b8; color: #fff; }
+    .btn-cancel:hover { background: #64748b; }
+    .btn-submit { background: #2563eb; color: #fff; }
+    .btn-submit:hover { background: #1d4ed8; }
+    .btn-delete { background: #ef4444; color: #fff; margin-right: auto; }
+    .btn-delete:hover { background: #dc2626; }
+  </style>
+</head>
+<body>
+
+  <!-- 사이드바 -->
+  <div id="sidebar">
+    <!-- 권한 및 사용자 로그인 정보 안내바 -->
+    <div class="user-auth-bar">
+      <span class="user-status" id="userStatusText">👤 조회 전용 (Guest)</span>
+      <div id="authActions" style="display:flex; gap:6px; align-items:center;">
+        <div id="g_id_onload"></div>
+        <button class="btn-invite" id="btnInviteCode" onclick="openInviteModal()">🔑 초대 코드 입력</button>
+      </div>
+    </div>
+
+    <div class="header">
+      <h2>입지 데이터 관리</h2>
+      <button class="btn-add" onclick="handleAddClick()">+ 신규 등록</button>
+    </div>
+    
+    <!-- 카테고리 필터 -->
+    <div class="filter-bar">
+      <button class="filter-btn active" onclick="filterCategory('ALL', this)">전체</button>
+      <button class="filter-btn" onclick="filterCategory('LH', this)">LH</button>
+      <button class="filter-btn" onclick="filterCategory('요양원', this)">요양원</button>
+      <button class="filter-btn" onclick="filterCategory('분양', this)">분양</button>
+      <button class="filter-btn" onclick="filterCategory('PM', this)">PM</button>
+      <button class="filter-btn" onclick="filterCategory('기타', this)">기타</button>
+    </div>
+    
+    <!-- 데이터 목록 -->
+    <div class="list-container" id="dataList">
+      <div style="text-align: center; color: #94a3b8; margin-top: 40px; font-size: 14px;">데이터를 불러오는 중...</div>
+    </div>
+  </div>
+
+  <!-- 지도 및 로드뷰 메인 영역 -->
+  <div id="map-container">
+    <div id="map">
+      <!-- 지도 컨트롤 버튼들 -->
+      <div class="map-controls">
+        <div class="ctrl-btn" id="btnMapType" onclick="toggleMapType()">위성</div>
+        <div class="ctrl-btn" id="btnDistrict" onclick="toggleOverlay('use_district')">지적도</div>
+        <div class="ctrl-btn" id="btnTerrain" onclick="toggleOverlay('terrain')">지형도</div>
+        <div class="ctrl-btn" id="btnRoadLine" onclick="toggleRoadLine()">파란길</div>
+        <div class="ctrl-btn" id="distanceControl" onclick="toggleDistanceMeasure()">거리재기</div>
+        <div class="ctrl-btn" id="roadviewControl" onclick="toggleRoadview()">로드뷰</div>
+      </div>
+
+      <!-- 거리 측정 안내 오버레이 -->
+      <div class="distance-info" id="distanceInfo">
+        <div>
+          <div class="distance-value" id="distanceValue">0 m</div>
+          <div class="distance-guide">지도를 클릭해 점을 추가하세요</div>
+        </div>
+        <div style="width: 1px; height: 32px; background: #e2e8f0; margin: 0 4px;"></div>
+        <button class="btn-clear-dist" onclick="clearDistanceLine()">초기화</button>
+      </div>
+    </div>
+
+    <!-- 로드뷰 오버레이 패널 -->
+    <div id="rvContainer">
+      <button class="rv-close-btn" onclick="closeRoadview()">로드뷰 닫기</button>
+      <div id="roadview" style="width:100%;height:100%;"></div>
+    </div>
+  </div>
+
+  <!-- 데이터 등록 / 수정 모달 -->
+  <div class="modal" id="dataModal">
+    <div class="modal-content">
+      <h3 id="modalTitle" style="margin-bottom: 18px; font-size: 18px; color: #1e293b;">신규 장소 등록</h3>
+      <form id="crudForm">
+        <input type="hidden" id="editId">
+        
+        <div class="form-group">
+          <label>구분 (카테고리)</label>
+          <select id="category" required>
+            <option value="LH">LH</option>
+            <option value="요양원">요양원</option>
+            <option value="분양">분양</option>
+            <option value="PM">PM</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>주소</label>
+          <input type="text" id="address" placeholder="예: 서울특별시 성동구 연무장길 12" required>
+        </div>
+
+        <div class="form-group">
+          <label>건물명/사업장명</label>
+          <input type="text" id="building_name" placeholder="예: 성수 스마트 타워">
+        </div>
+
+        <div class="form-group">
+          <label>담당자</label>
+          <input type="text" id="manager" placeholder="예: 홍길동 팀장">
+        </div>
+
+        <div class="form-group">
+          <label>메모</label>
+          <textarea id="memo" rows="3" placeholder="특이사항 및 메모 입력"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>첨부파일</label>
+          <input type="file" id="fileInput">
+          <div id="fileLink" style="margin-top: 6px; font-size: 12px;"></div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-delete" id="btnDelete" style="display:none;" onclick="deleteData()">삭제</button>
+          <button type="button" class="btn btn-cancel" onclick="closeModal()">취소</button>
+          <button type="submit" class="btn btn-submit">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 🔑 초대 코드 인증 모달 -->
+  <div class="modal" id="inviteModal">
+    <div class="modal-content" style="width: 380px;">
+      <h3 style="margin-bottom: 12px; font-size: 18px; color: #1e293b;">🔑 편집 권한 초대 코드 인증</h3>
+      <p style="font-size: 12px; color: #64748b; margin-bottom: 16px;">전달받으신 비밀 초대 코드를 입력해 주세요.<br>인증 완료 시 해당 구글 계정에 편집 권한이 부여됩니다.</p>
+      
+      <div class="form-group">
+        <label>비밀 초대 코드</label>
+        <input type="password" id="inputInviteCode" placeholder="초대 코드 입력 (예: WELCOME2026)">
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn btn-cancel" onclick="closeInviteModal()">취소</button>
+        <button type="button" class="btn btn-submit" onclick="submitInviteCode()">인증하기</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 설정값 (사용자 Apps Script URL & 구글 클라이언트 ID)
+    // ==========================================
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxdLI3ta6U0ES8FThkh6sw9pnSDd4ARDagAldOYSgGw2MfWnKeMjTANbMV60MNV9cx8nw/exec";
+    const GOOGLE_CLIENT_ID = "869425959996-gpfss8t809dlqjtbfcbad83o6h4uj6ra.apps.googleusercontent.com";
+    
+    const CATEGORY_COLORS = {
+      'LH': '#e67e22',      // 주황
+      '요양원': '#8e44ad',  // 보라
+      '분양': '#e74c3c',    // 빨강
+      'PC': '#2980b9',      // 파랑
+      'PM': '#16a34a',      // 초록
+      '기타': '#64748b'     // 회색
+    };
+
+    let map, rv, rvClient, mapWalker, dragMarker;
+    let markers = [], allData = [], currentCategory = 'ALL';
+
+    // 권한 관련 변수
+    let currentUserEmail = localStorage.getItem('user_email') || null;
+    let isUserAuthorized = false;
+
+    // 지도 상태 변수
+    let currentMapType = 'ROADMAP';
+    let overlayState = { use_district: false, terrain: false };
+    let isRoadviewOpen = false;
+    let isRoadLineVisible = false;
+    let isDistanceMode = false;
+    let distancePoints = [], distanceDots = [], distancePolyline = null;
+
+    // ==========================================
+    // Kakao MapWalker (동동이) 클래스
+    // ==========================================
+    function MapWalker(position){
+        var content = document.createElement('div');
+        var figure = document.createElement('div');
+        var angleBack = document.createElement('div');
+        content.className = 'MapWalker'; figure.className = 'figure'; angleBack.className = 'angleBack';
+        content.appendChild(angleBack); content.appendChild(figure);
+        var walker = new kakao.maps.CustomOverlay({ position: position, content: content, yAnchor: 1, zIndex: 998 });
+        this.walker = walker; this.content = content;
+    }
+    MapWalker.prototype.setAngle = function(angle){
+        var threshold = 22.5; var i = Math.floor((angle + 11.25) / threshold) % 16; if(i < 0) i += 16;
+        var className = 'm' + i; this.content.className = 'MapWalker ' + className;
+    };
+    MapWalker.prototype.setPosition = function(position){ this.walker.setPosition(position); };
+    MapWalker.prototype.setMap = function(map){ this.walker.setMap(map); };
+
+    // ==========================================
+    // 초기화 (독립적 예외 처리로 지도/데이터/구글인증 각각 안정적 실행)
+    // ==========================================
+    window.onload = function() {
+      // 1. 카카오 지도 초기화
+      try {
+        initKakaoMap();
+      } catch (e) {
+        console.error("카카오 지도 초기화 실패:", e);
+      }
+
+      // 2. 스프레드시트 데이터 불러오기 (구글 로그인 여부와 무관하게 항상 우선 로드)
+      try {
+        loadData();
+      } catch (e) {
+        console.error("데이터 로드 실행 실패:", e);
+      }
+
+      // 3. 구글 로그인 및 권한 체크 (에러가 나더라도 데이터 및 지도에 영향을 주지 않음)
+      setTimeout(function() {
+        try {
+          initGoogleAuth();
+        } catch (e) {
+          console.warn("구글 로그인 초기화 경고 (로그인 기능 사용 불가 시에도 기본 조회가 가능합니다):", e);
+        }
+      }, 500);
+    };
+
+    function initKakaoMap() {
+      const container = document.getElementById('map');
+      const options = {
+        center: new kakao.maps.LatLng(37.5665, 126.9780),
+        level: 4
+      };
+      map = new kakao.maps.Map(container, options);
+
+      rv = new kakao.maps.Roadview(document.getElementById('roadview'));
+      rvClient = new kakao.maps.RoadviewClient();
+
+      mapWalker = new MapWalker(map.getCenter());
+      var dragMarkerImg = new kakao.maps.MarkerImage('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', new kakao.maps.Size(50, 50), {offset: new kakao.maps.Point(25, 25)});
+      dragMarker = new kakao.maps.Marker({ position: map.getCenter(), draggable: true, image: dragMarkerImg, zIndex: 999 });
+
+      kakao.maps.event.addListener(dragMarker, 'drag', function() { mapWalker.setPosition(dragMarker.getPosition()); });
+      kakao.maps.event.addListener(dragMarker, 'dragend', function() {
+        var pos = dragMarker.getPosition();
+        rvClient.getNearestPanoId(pos, 300, function(panoId) {
+            if (panoId) rv.setPanoId(panoId, pos);
+            else { dragMarker.setPosition(rv.getPosition()); mapWalker.setPosition(rv.getPosition()); }
+        });
+      });
+
+      kakao.maps.event.addListener(rv, 'init', function() { mapWalker.setAngle(rv.getViewpoint().pan); });
+      kakao.maps.event.addListener(rv, 'viewpoint_changed', function() { mapWalker.setAngle(rv.getViewpoint().pan); });
+      kakao.maps.event.addListener(rv, 'position_changed', function() {
+        var pos = rv.getPosition(); mapWalker.setPosition(pos); dragMarker.setPosition(pos); map.setCenter(pos);
+      });
+
+      kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
+        if (isRoadviewOpen) {
+          var pos = mouseEvent.latLng; mapWalker.setPosition(pos); dragMarker.setPosition(pos);
+          rvClient.getNearestPanoId(pos, 300, function(panoId) { if (panoId) rv.setPanoId(panoId, pos); });
+        } else if (isDistanceMode) {
+          addDistancePoint(mouseEvent.latLng); 
+        }
+      });
+    }
+
+    // ==========================================
+    // 🔐 구글 로그인 및 권한 검증 로직
+    // ==========================================
+    function initGoogleAuth() {
+      if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+        console.warn("Google SDK가 아직 로드되지 않았거나 지원되지 않는 환경입니다.");
+        if (currentUserEmail) checkServerAuth(currentUserEmail);
+        return;
+      }
+
+      try {
+        google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleGoogleLoginResponse,
+          auto_select: false
+        });
+
+        if (currentUserEmail) {
+          checkServerAuth(currentUserEmail);
+        }
+      } catch (err) {
+        console.warn("Google Auth 초기화 예외:", err);
+      }
+    }
+
+    // 구글 로그인 콜백
+    function handleGoogleLoginResponse(response) {
+      try {
+        const payload = parseJwt(response.credential);
+        currentUserEmail = payload.email;
+        localStorage.setItem('user_email', currentUserEmail);
+        
+        checkServerAuth(currentUserEmail);
+      } catch(e) {
+        console.error("구글 토큰 파싱 실패:", e);
+      }
+    }
+
+    function parseJwt(token) {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      return JSON.parse(jsonPayload);
+    }
+
+    // 서버에 유저 권한이 있는지 체크
+    function checkServerAuth(email) {
+      fetch(GAS_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "check_user_auth",
+          data: { user_email: email }
+        })
+      })
+      .then(res => res.json())
+      .then(res => {
+        if (res.status === 'success' && res.isAuthorized) {
+          isUserAuthorized = true;
+          updateAuthUI(true, email);
+        } else {
+          isUserAuthorized = false;
+          updateAuthUI(false, email);
+        }
+      })
+      .catch(err => {
+        console.error("권한 체크 실패:", err);
+        updateAuthUI(false, email);
+      });
+    }
+
+    // UI에 현재 권한 상태 표시
+    function updateAuthUI(authorized, email) {
+      const textEl = document.getElementById('userStatusText');
+      const btnInvite = document.getElementById('btnInviteCode');
+
+      if (authorized) {
+        textEl.innerHTML = `🟢 <span style="color:#10b981;">${email}</span> (편집 가능)`;
+        btnInvite.style.display = 'none';
+      } else {
+        if (email) {
+          textEl.innerHTML = `🟡 <span>${email}</span> (조회 전용)`;
+        } else {
+          textEl.innerHTML = `👤 조회 전용 (Guest)`;
+        }
+        btnInvite.style.display = 'inline-block';
+      }
+    }
+
+    // 신규 등록 버튼 클릭 시 권한 제어
+    function handleAddClick() {
+      if (!isUserAuthorized) {
+        if (!currentUserEmail) {
+          alert("편집 권한을 얻으려면 로그인 및 초대 코드 인증이 필요합니다.");
+          if (typeof google !== 'undefined' && google.accounts) {
+            google.accounts.id.prompt();
+          } else {
+            openInviteModal();
+          }
+        } else {
+          alert("편집 권한이 없습니다. 전달받으신 초대 코드를 입력해 주세요.");
+          openInviteModal();
+        }
+        return;
+      }
+      openModal();
+    }
+
+    // 초대 코드 인증 모달 제어
+    function openInviteModal() {
+      document.getElementById('inputInviteCode').value = '';
+      document.getElementById('inviteModal').style.display = 'flex';
+    }
+
+    function closeInviteModal() {
+      document.getElementById('inviteModal').style.display = 'none';
+    }
+
+    // 초대 코드 제출
+    function submitInviteCode() {
+      const code = document.getElementById('inputInviteCode').value.trim();
+      if (!code) return alert("초대 코드를 입력해 주세요.");
+
+      if (!currentUserEmail) {
+        // 이메일이 없는 경우 수동 입력 유도
+        const manualEmail = prompt("구글 계정 이메일을 입력해 주세요:");
+        if (!manualEmail) return;
+        currentUserEmail = manualEmail.trim();
+        localStorage.setItem('user_email', currentUserEmail);
+      }
+
+      fetch(GAS_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "verify_invite_code",
+          data: {
+            user_email: currentUserEmail,
+            invite_code: code
+          }
+        })
+      })
+      .then(res => res.json())
+      .then(res => {
+        if (res.status === 'success' && res.isAuthorized) {
+          alert(res.message);
+          isUserAuthorized = true;
+          updateAuthUI(true, currentUserEmail);
+          closeInviteModal();
+        } else {
+          alert("인증 실패: " + res.message);
+        }
+      });
+    }
+
+    // ==========================================
+    // 지도 및 레이어 컨트롤
+    // ==========================================
+    function toggleMapType() {
+      const btn = document.getElementById('btnMapType');
+      if (currentMapType === 'ROADMAP') {
+        map.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
+        currentMapType = 'HYBRID';
+        btn.innerText = '일반';
+        btn.classList.add('active');
+      } else {
+        map.setMapTypeId(kakao.maps.MapTypeId.ROADMAP);
+        currentMapType = 'ROADMAP';
+        btn.innerText = '위성';
+        btn.classList.remove('active');
+      }
+    }
+
+    function toggleOverlay(type) {
+      var types = { 'use_district': kakao.maps.MapTypeId.USE_DISTRICT, 'terrain': kakao.maps.MapTypeId.TERRAIN };
+      var btnId = (type === 'use_district') ? 'btnDistrict' : 'btnTerrain';
+      if (!overlayState[type]) { 
+        map.addOverlayMapTypeId(types[type]); 
+        document.getElementById(btnId).classList.add('active'); 
+      } else { 
+        map.removeOverlayMapTypeId(types[type]); 
+        document.getElementById(btnId).classList.remove('active'); 
+      }
+      overlayState[type] = !overlayState[type];
+    }
+
+    function toggleRoadLine() {
+      var btn = document.getElementById('btnRoadLine');
+      if (!isRoadLineVisible) {
+        map.addOverlayMapTypeId(kakao.maps.MapTypeId.ROADVIEW);
+        btn.classList.add('active'); 
+        isRoadLineVisible = true;
+      } else {
+        map.removeOverlayMapTypeId(kakao.maps.MapTypeId.ROADVIEW);
+        btn.classList.remove('active'); 
+        isRoadLineVisible = false;
+      }
+    }
+
+    function openRoadview(pos) {
+      if (isDistanceMode) toggleDistanceMeasure(); 
+
+      isRoadviewOpen = true;
+      document.getElementById('rvContainer').style.display = 'block';
+      document.getElementById('roadviewControl').classList.add('active');
+
+      mapWalker.setMap(map); mapWalker.setPosition(pos);
+      dragMarker.setMap(map); dragMarker.setPosition(pos);
+      map.relayout(); map.setCenter(pos);
+
+      setTimeout(function() {
+        rv.relayout();
+        rvClient.getNearestPanoId(pos, 300, function(panoId) {
+          if (panoId) rv.setPanoId(panoId, pos);
+          else { alert('주변 300m 이내에 로드뷰가 없습니다.'); closeRoadview(); }
+        });
+      }, 150);
+    }
+
+    function closeRoadview() {
+      isRoadviewOpen = false;
+      document.getElementById('rvContainer').style.display = 'none';
+      document.getElementById('roadviewControl').classList.remove('active');
+      mapWalker.setMap(null); dragMarker.setMap(null);
+      map.relayout();
+    }
+
+    function toggleRoadview() {
+      if (!isRoadviewOpen) openRoadview(map.getCenter()); else closeRoadview();
+    }
+
+    function toggleDistanceMeasure() {
+      if (!isDistanceMode) {
+        if (isRoadviewOpen) closeRoadview(); 
+        isDistanceMode = true; 
+        document.getElementById('distanceControl').classList.add('active');
+        document.getElementById('distanceInfo').classList.add('show'); 
+        map.setCursor('crosshair');
+      } else {
+        isDistanceMode = false; 
+        document.getElementById('distanceControl').classList.remove('active');
+        document.getElementById('distanceInfo').classList.remove('show'); 
+        map.setCursor(''); 
+        clearDistanceLine();
+      }
+    }
+
+    function addDistancePoint(latlng) {
+      distancePoints.push(latlng);
+      var dotContent = '<div style="width:10px;height:10px;background:#3B82F6;border:2px solid white;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.3);margin-top:-5px;margin-left:-5px;"></div>';
+      var dot = new kakao.maps.CustomOverlay({ map: map, position: latlng, content: dotContent, zIndex: 10 });
+      distanceDots.push(dot);
+
+      if (distancePolyline) distancePolyline.setMap(null);
+      if (distancePoints.length >= 2) {
+        distancePolyline = new kakao.maps.Polyline({ map: map, path: distancePoints, strokeWeight: 3, strokeColor: '#3B82F6', strokeOpacity: 0.9, strokeStyle: 'solid' });
+        document.getElementById('distanceValue').innerText = formatDistance(distancePolyline.getLength());
+      }
+    }
+
+    function clearDistanceLine() {
+      distancePoints = []; distanceDots.forEach(function(d) { d.setMap(null); }); distanceDots = [];
+      if (distancePolyline) { distancePolyline.setMap(null); distancePolyline = null; }
+      document.getElementById('distanceValue').innerText = '0 m';
+    }
+
+    function formatDistance(meters) {
+      if (meters >= 1000) return (meters / 1000).toFixed(2) + ' km'; return Math.round(meters) + ' m';
+    }
+
+    function getMarkerImage(color) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40">
+        <path fill="${color}" stroke="#FFFFFF" stroke-width="2" d="M15 0C6.716 0 0 6.716 0 15c0 11.25 15 25 15 25s15-13.75 15-25C30 6.716 23.284 0 15 0z"/>
+        <circle cx="15" cy="14" r="5" fill="#FFFFFF"/>
+      </svg>`;
+      const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      
+      return new kakao.maps.MarkerImage(
+        url,
+        new kakao.maps.Size(30, 40),
+        { offset: new kakao.maps.Point(15, 40) }
+      );
+    }
+
+    // ==========================================
+    // 1. 데이터 조회 (Read) & 카드 렌더링
+    // ==========================================
+    function loadData() {
+      fetch(GAS_URL)
+        .then(res => res.json())
+        .then(response => {
+          if (response.status === 'success') {
+            allData = response.data;
+            renderListAndMarkers();
+          } else {
+            document.getElementById('dataList').innerHTML = '<div style="text-align: center; color: #ef4444; margin-top: 40px; font-size: 13px;">데이터를 불러오지 못했습니다.<br>' + (response.message || '') + '</div>';
+          }
+        })
+        .catch(err => {
+          console.error("데이터 로드 실패:", err);
+          document.getElementById('dataList').innerHTML = '<div style="text-align: center; color: #ef4444; margin-top: 40px; font-size: 13px;">데이터를 불러오지 못했습니다.<br>GAS URL 및 네트워크 연결을 확인해 주세요.</div>';
+        });
+    }
+
+    function renderListAndMarkers() {
+      markers.forEach(m => m.setMap(null));
+      markers = [];
+
+      const listEl = document.getElementById('dataList');
+      listEl.innerHTML = '';
+
+      const filteredData = currentCategory === 'ALL' 
+        ? allData 
+        : allData.filter(d => d.category === currentCategory);
+
+      if (filteredData.length === 0) {
+        listEl.innerHTML = '<div style="text-align: center; color: #94a3b8; margin-top: 40px; font-size: 13px;">등록된 데이터가 없습니다.</div>';
+        return;
+      }
+
+      const bounds = new kakao.maps.LatLngBounds();
+
+      filteredData.forEach(item => {
+        // 사이드바 목록 카드 생성
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.onclick = () => focusMap(item.latitude, item.longitude);
+
+        card.innerHTML = `
+          <!-- ① 카테고리 & 주소 (상단 한 줄에 배치) -->
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+            <span class="card-badge badge-${item.category}" style="margin-bottom: 0;">${item.category}</span>
+            <span class="card-address" style="margin-bottom: 0; flex: 1; word-break: break-all;">${item.address}</span>
+          </div>
+
+          <!-- ② 건물명 -->
+          ${item.building_name ? `<div class="card-title" style="margin-bottom: 6px;">${item.building_name}</div>` : ''}
+
+          <!-- ③ 메모 -->
+          ${item.memo ? `<div style="font-size: 12px; color: #475569; margin-bottom: 8px; line-height: 1.4; white-space: pre-line;">${item.memo}</div>` : ''}
+
+          <!-- ④ 밑줄 & ⑤ 담당자 -->
+          <div class="card-info" style="border-top: 1px solid #f1f5f9; padding-top: 8px; margin-top: 6px;">
+            <span>담당: ${item.manager || '-'}</span>
+            ${item.file_url ? `<a href="${item.file_url}" target="_blank" class="card-file-link" onclick="event.stopPropagation()">[첨부파일]</a>` : ''}
+          </div>
+        `;
+        listEl.appendChild(card);
+
+        // 지도 마커 생성
+        if (item.latitude && item.longitude) {
+          const loc = new kakao.maps.LatLng(item.latitude, item.longitude);
+          const color = CATEGORY_COLORS[item.category] || '#64748b';
+
+          const marker = new kakao.maps.Marker({
+            position: loc,
+            image: getMarkerImage(color),
+            title: `[${item.category}] ${item.building_name || item.address}`
+          });
+
+          marker.setMap(map);
+
+          kakao.maps.event.addListener(marker, 'click', function() {
+            openModalForEdit(item);
+          });
+
+          markers.push(marker);
+          bounds.extend(loc);
+        }
+      });
+
+      if (markers.length > 0) {
+        map.setBounds(bounds);
+      }
+    }
+
+    function focusMap(lat, lng) {
+      if (!lat || !lng) return;
+
+      const latitude = Number(lat);
+      const longitude = Number(lng);
+      if (isNaN(latitude) || isNaN(longitude)) return;
+
+      const moveLatLon = new kakao.maps.LatLng(latitude, longitude);
+
+      map.setCenter(moveLatLon);
+      map.setLevel(3);
+
+      if (isRoadviewOpen) {
+        openRoadview(moveLatLon);
+      }
+    }
+
+    function filterCategory(cat, btn) {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentCategory = cat;
+      renderListAndMarkers();
+    }
+
+    // ==========================================
+    // 2. 데이터 생성/수정 (Create / Update)
+    // ==========================================
+    document.getElementById('crudForm').onsubmit = async function(e) {
+      e.preventDefault();
+
+      if (!isUserAuthorized) {
+        alert("편집 권한이 없습니다. 초대 코드를 먼저 입력해 주세요.");
+        openInviteModal();
+        return;
+      }
+      
+      const id = document.getElementById('editId').value;
+      const fileInput = document.getElementById('fileInput');
+      
+      let fileData = null;
+      if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        const base64 = await convertBase64(file);
+        fileData = {
+          fileName: file.name,
+          base64: base64
+        };
+      }
+
+      const payload = {
+        action: id ? "update" : "create",
+        data: {
+          id: id || undefined,
+          user_email: currentUserEmail,
+          category: document.getElementById('category').value,
+          address: document.getElementById('address').value,
+          building_name: document.getElementById('building_name').value,
+          manager: document.getElementById('manager').value,
+          memo: document.getElementById('memo').value,
+          file: fileData
+        }
+      };
+
+      fetch(GAS_URL, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      })
+      .then(res => res.json())
+      .then(res => {
+        if (res.status === 'success') {
+          alert(id ? "수정되었습니다." : "등록되었습니다.");
+          closeModal();
+          loadData();
+        } else {
+          alert("오류 발생: " + res.message);
+        }
+      });
+    };
+
+    // ==========================================
+    // 3. 데이터 삭제 (Delete)
+    // ==========================================
+    function deleteData() {
+      if (!isUserAuthorized) {
+        alert("편집 권한이 없습니다.");
+        openInviteModal();
+        return;
+      }
+
+      const id = document.getElementById('editId').value;
+      const category = document.getElementById('category').value;
+      const address = document.getElementById('address').value;
+      const building_name = document.getElementById('building_name').value;
+
+      if (!confirm("정말 이 항목을 삭제하시겠습니까?")) return;
+
+      fetch(GAS_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "delete",
+          data: {
+            id: id || "",
+            user_email: currentUserEmail,
+            category: category || "",
+            address: address || "",
+            building_name: building_name || ""
+          }
+        })
+      })
+      .then(res => res.json())
+      .then(res => {
+        if (res.status === 'success') {
+          alert("삭제되었습니다.");
+          closeModal();
+          loadData();
+        } else {
+          alert("삭제 실패: " + res.message);
+        }
+      })
+      .catch(err => {
+        console.error("삭제 처리 오류:", err);
+        alert("삭제 처리 중 오류가 발생했습니다.");
+      });
+    }
+
+    // 모달 제어
+    function openModal() {
+      document.getElementById('editId').value = '';
+      document.getElementById('crudForm').reset();
+      document.getElementById('modalTitle').innerText = '신규 장소 등록';
+      document.getElementById('btnDelete').style.display = 'none';
+      document.getElementById('fileLink').innerHTML = '';
+      document.getElementById('dataModal').style.display = 'flex';
+    }
+
+    function openModalForEdit(item) {
+      if (!isUserAuthorized) {
+        alert("이 항목을 수정/삭제하려면 권한이 필요합니다. 우측 상단에서 초대 코드를 입력해 주세요.");
+        openInviteModal();
+        return;
+      }
+
+      document.getElementById('editId').value = item.id;
+      document.getElementById('category').value = item.category;
+      document.getElementById('address').value = item.address;
+      document.getElementById('building_name').value = item.building_name || '';
+      document.getElementById('manager').value = item.manager || '';
+      document.getElementById('memo').value = item.memo || '';
+      
+      document.getElementById('modalTitle').innerText = '장소 정보 수정';
+      document.getElementById('btnDelete').style.display = 'block';
+      
+      const fileLinkDiv = document.getElementById('fileLink');
+      if (item.file_url) {
+        fileLinkDiv.innerHTML = `기존 파일: <a href="${item.file_url}" target="_blank" style="color:#2563eb;">열람/다운로드</a>`;
+      } else {
+        fileLinkDiv.innerHTML = '';
+      }
+      
+      document.getElementById('dataModal').style.display = 'flex';
+    }
+
+    function closeModal() {
+      document.getElementById('dataModal').style.display = 'none';
+    }
+
+    function convertBase64(file) {
+      return new Promise((resolve, reject) => {
+        const fileReader = new FileReader();
+        fileReader.readAsDataURL(file);
+        fileReader.onload = () => resolve(fileReader.result);
+        fileReader.onerror = (error) => reject(error);
+      });
+    }
+  </script>
+</body>
+</html>
