@@ -105,7 +105,7 @@
   <div id="sidebar">
     <!-- 권한 및 사용자 로그인 정보 안내바 -->
     <div class="user-auth-bar">
-      <span class="user-status" id="userStatusText">👤 조회 전용 (Guest)</span>
+      <span class="user-status" id="userStatusText">👤 Guest Mode</span>
       <div id="authActions" style="display:flex; gap:6px; align-items:center;">
         <div id="g_id_onload"></div>
         <button class="btn-invite" id="btnInviteCode" onclick="openInviteModal()">🔑 초대 코드 입력</button>
@@ -437,7 +437,7 @@
         if (email) {
           textEl.innerHTML = `🟡 <span>${email}</span> (조회 전용)`;
         } else {
-          textEl.innerHTML = `👤 조회 전용 (Guest)`;
+          textEl.innerHTML = `👤 Guest Mode`;
         }
         btnInvite.style.display = 'inline-block';
       }
