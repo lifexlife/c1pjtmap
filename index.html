@@ -26,6 +26,7 @@
     .header h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
     .btn-add { padding: 8px 14px; background: #10b981; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; transition: 0.2s; }
     .btn-add:hover { background: #059669; }
+    .btn-add:disabled { background: #9ca3af; cursor: not-allowed; }
     
     /* 필터 영역 */
     .filter-bar { padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; gap: 6px; flex-wrap: wrap; }
@@ -95,6 +96,7 @@
     .btn-cancel:hover { background: #64748b; }
     .btn-submit { background: #2563eb; color: #fff; }
     .btn-submit:hover { background: #1d4ed8; }
+    .btn-submit:disabled { background: #93c5fd; cursor: not-allowed; }
     .btn-delete { background: #ef4444; color: #fff; margin-right: auto; }
     .btn-delete:hover { background: #dc2626; }
   </style>
@@ -286,7 +288,7 @@
     MapWalker.prototype.setMap = function(map){ this.walker.setMap(map); };
 
     // ==========================================
-    // 초기화 (독립적 예외 처리로 지도/데이터/구글인증 각각 안정적 실행)
+    // 초기화
     // ==========================================
     window.onload = function() {
       // 1. 카카오 지도 초기화
@@ -296,19 +298,19 @@
         console.error("카카오 지도 초기화 실패:", e);
       }
 
-      // 2. 스프레드시트 데이터 불러오기 (구글 로그인 여부와 무관하게 항상 우선 로드)
+      // 2. 스프레드시트 데이터 불러오기
       try {
         loadData();
       } catch (e) {
         console.error("데이터 로드 실행 실패:", e);
       }
 
-      // 3. 구글 로그인 및 권한 체크 (에러가 나더라도 데이터 및 지도에 영향을 주지 않음)
+      // 3. 구글 로그인 및 권한 체크
       setTimeout(function() {
         try {
           initGoogleAuth();
         } catch (e) {
-          console.warn("구글 로그인 초기화 경고 (로그인 기능 사용 불가 시에도 기본 조회가 가능합니다):", e);
+          console.warn("구글 로그인 초기화 경고:", e);
         }
       }, 500);
     };
@@ -358,7 +360,6 @@
     // ==========================================
     function initGoogleAuth() {
       if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
-        console.warn("Google SDK가 아직 로드되지 않았거나 지원되지 않는 환경입니다.");
         if (currentUserEmail) checkServerAuth(currentUserEmail);
         return;
       }
@@ -378,13 +379,11 @@
       }
     }
 
-    // 구글 로그인 콜백
     function handleGoogleLoginResponse(response) {
       try {
         const payload = parseJwt(response.credential);
         currentUserEmail = payload.email;
         localStorage.setItem('user_email', currentUserEmail);
-        
         checkServerAuth(currentUserEmail);
       } catch(e) {
         console.error("구글 토큰 파싱 실패:", e);
@@ -400,7 +399,6 @@
       return JSON.parse(jsonPayload);
     }
 
-    // 서버에 유저 권한이 있는지 체크
     function checkServerAuth(email) {
       fetch(GAS_URL, {
         method: "POST",
@@ -425,7 +423,6 @@
       });
     }
 
-    // UI에 현재 권한 상태 표시
     function updateAuthUI(authorized, email) {
       const textEl = document.getElementById('userStatusText');
       const btnInvite = document.getElementById('btnInviteCode');
@@ -443,7 +440,6 @@
       }
     }
 
-    // 신규 등록 버튼 클릭 시 권한 제어
     function handleAddClick() {
       if (!isUserAuthorized) {
         if (!currentUserEmail) {
@@ -462,7 +458,6 @@
       openModal();
     }
 
-    // 초대 코드 인증 모달 제어
     function openInviteModal() {
       document.getElementById('inputInviteCode').value = '';
       document.getElementById('inviteModal').style.display = 'flex';
@@ -472,13 +467,11 @@
       document.getElementById('inviteModal').style.display = 'none';
     }
 
-    // 초대 코드 제출
     function submitInviteCode() {
       const code = document.getElementById('inputInviteCode').value.trim();
       if (!code) return alert("초대 코드를 입력해 주세요.");
 
       if (!currentUserEmail) {
-        // 이메일이 없는 경우 수동 입력 유도
         const manualEmail = prompt("구글 계정 이메일을 입력해 주세요:");
         if (!manualEmail) return;
         currentUserEmail = manualEmail.trim();
@@ -669,7 +662,7 @@
         : allData.filter(d => d.category === currentCategory);
 
       if (filteredData.length === 0) {
-        listEl.innerHTML = '<div style="text-align: center; color: #94a3b8; margin-top: 40px; font-size: 13px;">등록된 데이터가 없습니다.</div>';
+        listEl.innerHTML = '<div style="text-align: center; color: #94a3b8; margin-top: 40px; font-size: 14px;">등록된 데이터가 없습니다.</div>';
         return;
       }
 
@@ -754,7 +747,7 @@
     }
 
     // ==========================================
-    // 2. 데이터 생성/수정 (Create / Update)
+    // 2. 데이터 생성/수정 (속도 최적화 적용)
     // ==========================================
     document.getElementById('crudForm').onsubmit = async function(e) {
       e.preventDefault();
@@ -764,40 +757,59 @@
         openInviteModal();
         return;
       }
-      
-      const id = document.getElementById('editId').value;
-      const fileInput = document.getElementById('fileInput');
-      
-      let fileData = null;
-      if (fileInput.files.length > 0) {
-        const file = fileInput.files[0];
-        const base64 = await convertBase64(file);
-        fileData = {
-          fileName: file.name,
-          base64: base64
-        };
-      }
 
-      const payload = {
-        action: id ? "update" : "create",
-        data: {
-          id: id || undefined,
-          user_email: currentUserEmail,
-          category: document.getElementById('category').value,
-          address: document.getElementById('address').value,
-          building_name: document.getElementById('building_name').value,
-          manager: document.getElementById('manager').value,
-          memo: document.getElementById('memo').value,
-          file: fileData
+      // UI 즉시 반응 (중복 제출 방지)
+      const submitBtn = document.querySelector('#crudForm .btn-submit');
+      const originalBtnText = submitBtn.innerText;
+      submitBtn.disabled = true;
+      submitBtn.innerText = "저장 중...";
+
+      try {
+        const id = document.getElementById('editId').value;
+        const address = document.getElementById('address').value.trim();
+        const fileInput = document.getElementById('fileInput');
+
+        let fileData = null;
+        if (fileInput.files.length > 0) {
+          const file = fileInput.files[0];
+          const base64 = await convertBase64(file);
+          fileData = {
+            fileName: file.name,
+            base64: base64
+          };
         }
-      };
 
-      fetch(GAS_URL, {
-        method: "POST",
-        body: JSON.stringify(payload)
-      })
-      .then(res => res.json())
-      .then(res => {
+        // 🚀 [속도 최적화] 브라우저에서 카카오 지오코딩으로 위경도 미리 계산 (구글 서버 지연 방지)
+        let lat = "", lng = "";
+        if (address) {
+          const coords = await getCoordsPromise(address);
+          if (coords) {
+            lat = coords.lat;
+            lng = coords.lng;
+          }
+        }
+
+        const payload = {
+          action: id ? "update" : "create",
+          data: {
+            id: id || undefined,
+            user_email: currentUserEmail,
+            category: document.getElementById('category').value,
+            address: address,
+            building_name: document.getElementById('building_name').value,
+            manager: document.getElementById('manager').value,
+            memo: document.getElementById('memo').value,
+            latitude: lat,  // 웹에서 미리 구한 위도
+            longitude: lng, // 웹에서 미리 구한 경도
+            file: fileData
+          }
+        };
+
+        const res = await fetch(GAS_URL, {
+          method: "POST",
+          body: JSON.stringify(payload)
+        }).then(r => r.json());
+
         if (res.status === 'success') {
           alert(id ? "수정되었습니다." : "등록되었습니다.");
           closeModal();
@@ -805,8 +817,35 @@
         } else {
           alert("오류 발생: " + res.message);
         }
-      });
+      } catch (err) {
+        console.error("저장 중 오류 발생:", err);
+        alert("전송 처리 중 오류가 발생했습니다.");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = originalBtnText;
+      }
     };
+
+    // 카카오 지오코더 비동기 프라미스 래퍼 함수
+    function getCoordsPromise(address) {
+      return new Promise((resolve) => {
+        if (typeof kakao === 'undefined' || !kakao.maps || !kakao.maps.services) {
+          resolve(null);
+          return;
+        }
+        const geocoder = new kakao.maps.services.Geocoder();
+        geocoder.addressSearch(address, function(result, status) {
+          if (status === kakao.maps.services.Status.OK && result.length > 0) {
+            resolve({
+              lat: result[0].y,
+              lng: result[0].x
+            });
+          } else {
+            resolve(null);
+          }
+        });
+      });
+    }
 
     // ==========================================
     // 3. 데이터 삭제 (Delete)
@@ -872,7 +911,7 @@
       }
 
       document.getElementById('editId').value = item.id;
-      document.getElementById('category').value = item.category;
+      document.getElementById('category').value = item category;
       document.getElementById('address').value = item.address;
       document.getElementById('building_name').value = item.building_name || '';
       document.getElementById('manager').value = item.manager || '';
